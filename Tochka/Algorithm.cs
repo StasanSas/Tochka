@@ -36,7 +36,7 @@ public class Algorithm
         var cameFrom = new Dictionary<Maze, Tuple<Maze, int>?>(); // Для восстановления пути
 
         dictionaryCost[StartMaze] = 0;
-        var h = GetHeuristic(StartMaze, EndMaze);
+        var h = GetHeuristic(StartMaze);
         open.Enqueue(StartMaze, h);
         cameFrom[StartMaze] = null;
 
@@ -46,15 +46,6 @@ public class Algorithm
             
             if (currMaze.Equals(EndMaze))
             {
-                Process currentProcess = Process.GetCurrentProcess();
-                long workingSet = currentProcess.WorkingSet64; // Физическая память
-                long privateMemory = currentProcess.PrivateMemorySize64; // Приватная память
-                long virtualMemory = currentProcess.VirtualMemorySize64; // Виртуальная память
-        
-                Console.WriteLine($"Рабочий набор: {workingSet / 1024 / 1024} MB");
-                Console.WriteLine($"Приватная память: {privateMemory / 1024 / 1024} MB");
-                Console.WriteLine($"Виртуальная память: {virtualMemory / 1024 / 1024} MB");
-                PrintSimplePath(cameFrom, currCost);
                 return currCost;
             }
 
@@ -65,7 +56,7 @@ public class Algorithm
                 {
                     dictionaryCost[nextMaze] = nextCost;
                     cameFrom[nextMaze] = new Tuple<Maze, int>(currMaze, currCost);
-                    var valueForHeap = nextCost + GetHeuristic(nextMaze, EndMaze);
+                    var valueForHeap = nextCost + GetHeuristic(nextMaze);
                     open.Enqueue(nextMaze, valueForHeap);
                 }
             }
@@ -73,38 +64,7 @@ public class Algorithm
         throw new Exception();
     }
     
-    private void PrintSimplePath(Dictionary<Maze, Tuple<Maze, int>?> cameFrom, int totalCost)
-    {
-        var path = new List<Tuple<Maze, int>>();
-        var current = new Tuple<Maze, int>(EndMaze, totalCost);
-
-        while (current != null)
-        {
-            path.Add(current);
-            
-            current = cameFrom[current.Item1];
-        }
-    
-        // Разворачиваем путь (от начала к концу)
-        path.Reverse();
-    
-        Console.WriteLine("=== НАЙДЕННЫЙ ПУТЬ ===");
-        Console.WriteLine($"Общая стоимость: {totalCost}");
-        Console.WriteLine($"Количество шагов: {path.Count - 1}");
-        Console.WriteLine();
-        var d = 0;
-        for (int i = 0; i < path.Count; i++)
-        {
-            Console.WriteLine($"Шаг {i}:\n{path[i].Item1}\n");
-            Console.WriteLine($"Cтоимость пути: {path[i].Item2 - d}\n\n");
-            Console.WriteLine($"Cтоимость общая: {path[i].Item2}\n\n");
-            d = path[i].Item2;
-        }
-    
-        Console.WriteLine("======================");
-    }
-    
-    public int GetHeuristic(Maze current, Maze goal)
+    public int GetHeuristic(Maze current)
     {
         var total = 0;
 
@@ -159,33 +119,6 @@ public class Algorithm
             results.AddRange(TryGetStepFromHallToRoom(maze, i));
 
         return results;
-    }
-    
-    public IEnumerable<(Maze maze, int cost)> TryGetStepFromRoomToRoom(Maze maze, int indexRoom)
-    {
-        var dataAboutLetterForMove = maze.GetDataLetterWhichFirstInRoom(indexRoom);
-        if (dataAboutLetterForMove == null)
-            yield break;
-        for (int indexRoom2 = 0; indexRoom2 < maze.Rooms.Length; indexRoom2++)
-        {
-            if (indexRoom == indexRoom2)
-                continue;
-            var placesForMaybeMove = maze.GetIndexWhereCanMoveLetterInRoom(indexRoom2, dataAboutLetterForMove.c);
-            if (!placesForMaybeMove.HasValue)
-                continue;
-            if (maze.CanGetStepInHall(maze.Rooms[indexRoom].IndexDoor,
-                    maze.Rooms[indexRoom2].IndexDoor))
-            {
-                var newMaze = maze.GetMazeAfterStepBetweenRoomAndRoom(indexRoom,
-                    dataAboutLetterForMove.index, indexRoom2, placesForMaybeMove.Value);
-                var stepsInHall = Math.Abs(maze.Rooms[indexRoom].IndexDoor - maze.Rooms[indexRoom2].IndexDoor);
-                var stepsInRoom1 = dataAboutLetterForMove.index + 1;
-                var stepsInRoom2 = placesForMaybeMove.Value + 1;
-                var cost = dataAboutLetterForMove.c.GetCost() * (stepsInRoom1 + stepsInHall + stepsInRoom2);
-                yield return (newMaze, cost);
-            }
-        }
-        
     }
 
 
