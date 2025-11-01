@@ -1,4 +1,5 @@
-﻿using System;
+﻿namespace Tochka;
+using System;
 using System.Collections.Generic;
 using System.Linq;
 using System.Text;
@@ -504,7 +505,7 @@ public class Algorithm
     }
 }
 
-class run
+class Run  
 {
     static int Solve(List<string> lines)
     {

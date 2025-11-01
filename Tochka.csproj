@@ -4,6 +4,6 @@
         <TargetFramework>net8.0</TargetFramework>
         <ImplicitUsings>enable</ImplicitUsings>
         <Nullable>enable</Nullable>
-        <StartupObject>run</StartupObject>
+        <StartupObject>Tochka.Run</StartupObject>
     </PropertyGroup>
 </Project>
