@@ -327,7 +327,7 @@ public static class Chars
         }
     }
 
-class Run  
+class run  
 {
     static int Solve(List<string> lines)
     {
