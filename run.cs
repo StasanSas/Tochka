@@ -1,519 +1,342 @@
 ﻿namespace Tochka;
-using System;
-using System.Collections.Generic;
-using System.Linq;
-using System.Text;
-
-// Перенесем все статические классы в начало файла
-
-public static class Infrastructure
-{
-    public static string ChangeString(this string str, char c, int indexChange)
-    {
-        return str.Substring(0, indexChange) + c + str.Substring(indexChange + 1);
-    }
-}
 
 public static class Chars
-{
-    private static readonly IReadOnlyDictionary<char, int> CostMap = new Dictionary<char, int>
     {
-        ['A'] = 1,
-        ['B'] = 10,
-        ['C'] = 100,
-        ['D'] = 1000
-    };
+        // чтобы влезли char такие массивы
+        public static readonly int[] Cost = new int[128]; 
+        public static readonly int[] RoomIndex = new int[128];
+        public static readonly int[] DoorIndexToRoomIndex = new int[11];
+        public static readonly bool[] IsDoor = new bool[11];
 
-    private static readonly IReadOnlyDictionary<char, int> RoomIndexMap = new Dictionary<char, int>
-    {
-        ['A'] = 0,
-        ['B'] = 1,
-        ['C'] = 2,
-        ['D'] = 3
-    };
-
-    private static readonly IReadOnlyDictionary<int, char> DoorIndexToCharMap = new Dictionary<int, char>
-    {
-        [2] = 'A',
-        [4] = 'B',
-        [6] = 'C',
-        [8] = 'D'
-    };
-
-    public static readonly IReadOnlySet<char> ValidChars = new HashSet<char> { 'A', 'B', 'C', 'D' };
-    public static readonly IReadOnlySet<int> ValidDoorIndexes = new HashSet<int> { 2, 4, 6, 8 };
-
-    public static int GetCost(this char c)
-    {
-        if (!ValidChars.Contains(c)) throw new ArgumentException();
-        return CostMap[c];
-    }
-
-    public static int GetIndexRoom(this char c)
-    {
-        if (!ValidChars.Contains(c)) throw new ArgumentException();
-        return RoomIndexMap[c];
-    }
-
-    public static char GetCharByIndexDoorForRoom(int index)
-    {
-        if (!ValidDoorIndexes.Contains(index)) throw new ArgumentException();
-        return DoorIndexToCharMap[index];
-    }
-}
-
-public static class StringExtensions
-{
-    public static bool HasOnlyCharFromIndex(this string str, int startIndex, char expected)
-    {
-        for (int i = startIndex; i < str.Length; i++)
+        static Chars()
         {
-            if (str[i] != expected) return false;
+            Cost['A'] = 1; Cost['B'] = 10; Cost['C'] = 100; Cost['D'] = 1000;
+            RoomIndex['A'] = 0; RoomIndex['B'] = 1; RoomIndex['C'] = 2; RoomIndex['D'] = 3;
+            DoorIndexToRoomIndex[2] = 0; DoorIndexToRoomIndex[4] = 1; DoorIndexToRoomIndex[6] = 2; DoorIndexToRoomIndex[8] = 3;
+            IsDoor[2] = IsDoor[4] = IsDoor[6] = IsDoor[8] = true;
         }
-        return true;
-    }
-}
 
-public static class MazeOperations
-{
-    public static Maze GetMazeAfterStepBetweenHallwayAndRoom(
-        this Maze maze, int indexRoom, int indexInRoom, int indexInHallway)
-    {
-        var currRoom = maze.Rooms[indexRoom];
-        var lastCharFromRoom = currRoom.RoomString[indexInRoom];
-        var lastCharFromHall = maze.Hallway.HallString[indexInHallway];
-        var newRoom = currRoom.GetChangedRoom(lastCharFromHall, indexInRoom);
-        var newHall = maze.Hallway.GetChangedHall(lastCharFromRoom, indexInHallway);
-        var newArrayRooms = (Room[])maze.Rooms.Clone();
-        newArrayRooms[indexRoom] = newRoom;
-        return new Maze(newArrayRooms, newHall);
+        public static bool IsLetter(char c) => c >= 'A' && c <= 'D';
     }
 
-    public static Maze GetMazeAfterStepInHallway(
-        this Maze maze, int indexInHall1, int indexInHall2)
+    public class State 
     {
-        var lastCharFromHall1 = maze.Hallway.HallString[indexInHall1];
-        var lastCharFromHall2 = maze.Hallway.HallString[indexInHall2];
-        var tempHall = maze.Hallway.GetChangedHall(lastCharFromHall2, indexInHall1);
-        var newHall = tempHall.GetChangedHall(lastCharFromHall1, indexInHall2);
-        return new Maze(maze.Rooms, newHall);
-    }
+        public readonly char[] Hall; 
+        public readonly char[][] Rooms; 
+        private readonly int hash;
 
-    public static Maze GetMazeAfterStepBetweenRoomAndRoom(
-        this Maze maze, int indexRoom1, int indexInRoom1, int indexRoom2, int indexInRoom2)
-    {
-        var currRoom1 = maze.Rooms[indexRoom1];
-        var currRoom2 = maze.Rooms[indexRoom2];
-        var lastCharFromRoom1 = currRoom1.RoomString[indexInRoom1];
-        var lastCharFromRoom2 = currRoom2.RoomString[indexInRoom2];
-        var newRoom1 = currRoom1.GetChangedRoom(lastCharFromRoom2, indexInRoom1);
-        var newRoom2 = currRoom2.GetChangedRoom(lastCharFromRoom1, indexInRoom2);
-        var newArrayRooms = (Room[])maze.Rooms.Clone();
-        newArrayRooms[indexRoom1] = newRoom1;
-        newArrayRooms[indexRoom2] = newRoom2;
-        return new Maze(newArrayRooms, maze.Hallway);
-    }
-
-    public static bool CanGetStepInHall(
-        this Maze maze, int indexInHall1, int indexInHall2)
-    {
-        var start = Math.Min(indexInHall1, indexInHall2);
-        var end = Math.Max(indexInHall1, indexInHall2);
-        for (int i = start + 1; i < end; i++)
+        public State(char[] hall, char[][] rooms)
         {
-            if (maze.Hallway.HallString[i] != '.') return false;
+            Hall = hall;
+            Rooms = rooms;
+            hash = CalcHash();
         }
-        return true;
-    }
 
-    public static IEnumerable<DataAboutChar> GetDataLettersWhichCanMoveInHall(this Maze maze)
-    {
-        for (var i = 0; i < maze.Hallway.HallString.Length; i++)
+        private int CalcHash()
         {
-            var currChar = maze.Hallway.HallString[i];
-            if (currChar == '.') continue;
-            var haveSpaceInLeft = i != 0 && maze.Hallway.HallString[i - 1] == '.';
-            var haveSpaceInRight = i != (maze.Hallway.HallString.Length - 1) && maze.Hallway.HallString[i + 1] == '.';
-            if (haveSpaceInLeft || haveSpaceInRight)
-                yield return new DataAboutChar(i, currChar);
-        }
-    }
-
-    public static DataAboutChar? GetDataLetterWhichFirstInRoom(this Maze maze, int indexRoom)
-    {
-        var currRoom = maze.Rooms[indexRoom];
-        for (var i = 0; i < currRoom.RoomString.Length; i++)
-        {
-            var currChar = currRoom.RoomString[i];
-            if (currChar != '.') return new DataAboutChar(i, currChar);
-        }
-        return null;
-    }
-
-    public static int? GetIndexWhereCanMoveLetterInRoom(
-        this Maze maze, int indexRoom, char mustBeThisChar)
-    {
-        var currRoom = maze.Rooms[indexRoom];
-        var haveSpace = false;
-        for (var i = 0; i < currRoom.RoomString.Length; i++)
-        {
-            var currChar = currRoom.RoomString[i];
-            if (currChar == '.')
+            unchecked
             {
-                haveSpace = true;
-                continue;
+                int h = 17;
+                for (int i = 0; i < Hall.Length; i++) h = h * 31 + Hall[i];
+                for (int r = 0; r < Rooms.Length; r++)
+                    for (int i = 0; i < Rooms[r].Length; i++) h = h * 31 + Rooms[r][i];
+                return h;
             }
-
-            // если появилась буква, то все буквы после неё должны быть одинаковы и соответствовать комноте
-            // наче комната не подходит
-            var haveOnlyOneChar = currRoom.RoomString.HasOnlyCharFromIndex(i, mustBeThisChar);
-            var roomIsForThisChar = mustBeThisChar.GetIndexRoom() == indexRoom;
-            if (haveSpace && haveOnlyOneChar && roomIsForThisChar)
-                return i - 1;
-            else
-                return null;
         }
 
-        // если не было никаких букв и было свободное место
-        if (haveSpace)
-            return currRoom.RoomString.Length - 1;
-        else
-            return null;
-    }
+        public override int GetHashCode() => hash;
 
-    public static IEnumerable<int> GetIndexesWhereCanMoveLetterInHall(this Maze maze)
-    {
-        var hall = maze.Hallway.HallString;
-        for (int i = 0; i < hall.Length; i++)
+        public override bool Equals(object obj)
         {
-            if (hall[i] == '.' && !Maze.IndexDoors.Contains(i))
-                yield return i;
-        }
-    }
-}
-
-public static class Parser
-{
-    public static Hallway GetHallWay(List<string> input)
-    {
-        var hall = input[1];
-        return new Hallway(hall.Substring(1, hall.Length - 2));
-    }
-
-    public static int GetRoomSize(List<string> input)
-    {
-        return input.Count - 3;
-    }
-
-    public static List<Room> GetRooms(List<string> input)
-    {
-        var result = new List<Room>();
-        for (var indexRoom = 3; indexRoom < input[0].Length - 3; indexRoom += 2)
-        {
-            var roomString = new StringBuilder();
-            var indexWithoutWall = indexRoom - 1;
-            for (int row = 2; row < input.Count - 1; row++)
+            if (obj is not State other) return false;
+            for (var i = 0; i < Hall.Length; i++) 
+                if (Hall[i] != other.Hall[i]) return false;
+            for (int roomIndex = 0; roomIndex < Rooms.Length; roomIndex++)
             {
-                roomString.Append(input[row][indexRoom]);
+                var roomObj = Rooms[roomIndex]; 
+                var roomOther = other.Rooms[roomIndex];
+                for (int i = 0; i < roomObj.Length; i++) 
+                    if (roomObj[i] != roomOther[i]) 
+                        return false;
             }
-            result.Add(new Room(indexWithoutWall, roomString.ToString()));
+            return true;
         }
-        return result;
-    }
-}
 
-public record DataAboutChar(int index, char c);
-
-public class Hallway
-{
-    public readonly string HallString;
-
-    public Hallway(string hallString)
-    {
-        HallString = hallString;
-    }
-
-    public Hallway GetChangedHall(char newChar, int index)
-    {
-        var newHallString = HallString.ChangeString(newChar, index);
-        return new Hallway(newHallString);
-    }
-
-    public override bool Equals(object obj)
-    {
-        if (obj is not Hallway other) return false;
-        return string.Equals(HallString, other.HallString);
-    }
-
-    public override int GetHashCode()
-    {
-        return HallString.GetHashCode();
-    }
-}
-
-public class Maze
-{
-    public readonly Hallway Hallway;
-    public readonly Room[] Rooms;
-    public static readonly HashSet<int> IndexDoors = new HashSet<int> { 2, 4, 6, 8 };
-
-    public Maze(List<string> input)
-    {
-        Hallway = Parser.GetHallWay(input);
-        Rooms = Parser.GetRooms(input).ToArray();
-    }
-
-    public Maze(Room[] rooms, Hallway hallway)
-    {
-        Rooms = rooms;
-        Hallway = hallway;
-    }
-
-    public override bool Equals(object obj)
-    {
-        if (obj is not Maze other) return false;
-        return Equals(Hallway, other.Hallway) && Rooms.SequenceEqual(other.Rooms);
-    }
-
-    public override int GetHashCode()
-    {
-        unchecked
+        public State WithHallSwap(int i, int j)
         {
-            int hash = 17;
-            hash = hash * 23 + Hallway.GetHashCode();
-            foreach (var room in Rooms)
+            var newHall = (char[])Hall.Clone();
+            var tmp = newHall[i]; newHall[i] = newHall[j]; newHall[j] = tmp;
+            return new State(newHall, CloneRoomsShallow());
+        }
+
+        public State WithHallRoomSwap(int roomIndex, int posInRoom, int hallIndex)
+        {
+            var newHall = (char[])Hall.Clone();
+            var newRooms = CloneRoomsShallow();
+            var tmp = newRooms[roomIndex][posInRoom];
+            newRooms[roomIndex][posInRoom] = newHall[hallIndex];
+            newHall[hallIndex] = tmp;
+            return new State(newHall, newRooms);
+        }
+
+        private char[][] CloneRoomsShallow()
+        {
+            var newRooms = new char[4][];
+            for (int i = 0; i < 4; i++) 
+                newRooms[i] = (char[])Rooms[i].Clone();
+            return newRooms;
+        }
+    }
+
+    public static class Parser
+    {
+        public static char[] ParseHall(string line)
+        {
+            var s = line.Substring(1, line.Length - 2);
+            return s.ToCharArray();
+        }
+
+        public static char[][] ParseRooms(List<string> input)
+        {
+            var roomAmount = 4; 
+            var rows = input.Count - 3; 
+            var rooms = new char[roomAmount][];
+            for (var indexRoom = 0; indexRoom < roomAmount; indexRoom++) 
+                rooms[indexRoom] = new char[rows];
+            for (var row = 0; row < rows; row++)
             {
-                hash = hash * 23 + room.GetHashCode();
-            }
-            return hash;
-        }
-    }
-}
-
-public class Room
-{
-    public static int RoomSize { get; set; }
-    public readonly int IndexDoor;
-    public readonly string RoomString;
-
-    public Room(int indexDoor, string roomString)
-    {
-        if (RoomSize == 0) throw new ArgumentException();
-        IndexDoor = indexDoor;
-        RoomString = roomString;
-    }
-
-    public Room GetChangedRoom(char newChar, int index)
-    {
-        var newRoomString = RoomString.ChangeString(newChar, index);
-        return new Room(IndexDoor, newRoomString);
-    }
-
-    public override bool Equals(object obj)
-    {
-        if (obj is not Room other) return false;
-        return IndexDoor == other.IndexDoor && string.Equals(RoomString, other.RoomString);
-    }
-
-    public override int GetHashCode()
-    {
-        unchecked
-        {
-            int hash = 17;
-            hash = hash * 23 + IndexDoor.GetHashCode();
-            hash = hash * 23 + RoomString.GetHashCode();
-            return hash;
-        }
-    }
-
-    public Room Clone()
-    {
-        return new Room(IndexDoor, RoomString);
-    }
-}
-
-public class Algorithm
-{
-    public Maze StartMaze;
-    public Maze EndMaze;
-
-    public Algorithm(Maze startMaze)
-    {
-        StartMaze = startMaze;
-        EndMaze = GetEndMaze();
-    }
-
-    public Maze GetEndMaze()
-    {
-        var hallWay = new Hallway(string.Concat(Enumerable.Repeat(".", 11)));
-        var rooms = new List<Room>();
-        for (var i = 2; i <= 8; i += 2)
-        {
-            var charForRepeat = Chars.GetCharByIndexDoorForRoom(i);
-            var room = new Room(i, string.Concat(Enumerable.Repeat(charForRepeat, Room.RoomSize)));
-            rooms.Add(room);
-        }
-        return new Maze(rooms.ToArray(), hallWay);
-    }
-
-    public int Start()
-    {
-        var open = new PriorityQueue<Maze, int>();
-        var dictionaryCost = new Dictionary<Maze, int>();
-        var cameFrom = new Dictionary<Maze, Tuple<Maze, int>?>(); // Для восстановления пути
-
-        dictionaryCost[StartMaze] = 0;
-        var h = GetHeuristic(StartMaze);
-        open.Enqueue(StartMaze, h);
-        cameFrom[StartMaze] = null;
-
-        while (open.TryDequeue(out var currMaze, out var currF))
-        {
-            var currCost = dictionaryCost[currMaze];
-
-            if (currMaze.Equals(EndMaze))
-            {
-                return currCost;
-            }
-
-            foreach (var (nextMaze, moveCost) in GetNextSteps(currMaze))
-            {
-                var nextCost = currCost + moveCost;
-                if (!dictionaryCost.TryGetValue(nextMaze, out var oldCost) || nextCost < oldCost)
+                var line = input[2 + row];
+                for (int col = 0; col < roomAmount; col++)
                 {
-                    dictionaryCost[nextMaze] = nextCost;
-                    cameFrom[nextMaze] = new Tuple<Maze, int>(currMaze, currCost);
-                    var valueForHeap = nextCost + GetHeuristic(nextMaze);
-                    open.Enqueue(nextMaze, valueForHeap);
+                    var ch = line[3 + col * 2];
+                    rooms[col][row] = ch;
+                }
+            }
+            return rooms;
+        }
+    }
+
+    public class Algorithm
+    {
+        private readonly State start;
+        private readonly State end;
+        private static readonly int[] doorPositions = { 2, 4, 6, 8 };
+
+        public Algorithm(State start, int roomSize)
+        {
+            this.start = start; 
+            end = GetEndState(roomSize);
+        }
+
+        private State GetEndState(int depth)
+        {
+            var hall = new char[11];
+            for (int i = 0; i < 11; i++) 
+                hall[i] = '.';
+            var rooms = new char[4][];
+            var chars = new char[]{ 'A', 'B', 'C', 'D' };
+            for (int roomIndex = 0; roomIndex < 4; roomIndex++)
+            {
+                rooms[roomIndex] = new char[depth];
+                for (int i = 0; i < depth; i++) 
+                    rooms[roomIndex][i] = chars[roomIndex];
+            }
+            return new State(hall, rooms);
+        }
+
+        private int Heuristic(State s)
+        {
+            var result = 0;
+            for (var i = 0; i < s.Hall.Length; i++)
+            {
+                var c = s.Hall[i];
+                if (!Chars.IsLetter(c)) 
+                    continue;
+                var targetDoor = Chars.RoomIndex[c] * 2 + 2;
+                var steps = Math.Abs(targetDoor - i) + 1; // минимум необходимых шагов
+                result += steps * Chars.Cost[c];
+            }
+            
+            for (var r = 0; r < s.Rooms.Length; r++)
+            {
+                var room = s.Rooms[r];
+                for (int pos = 0; pos < room.Length; pos++)
+                {
+                    var c = room[pos];
+                    if (!Chars.IsLetter(c)) continue;
+                    var targetRoom = Chars.RoomIndex[c];
+                    if (targetRoom == r)
+                    {
+                        // если есть импостер то Math.Abs(doorFrom - doorTo) и мы должны его выпустить а поэтому нужно pos + 1
+                        var wrongBelow = false;
+                        for (var k = pos + 1; k < room.Length; k++)
+                            if (room[k] != c)
+                            {
+                                wrongBelow = true; 
+                                break;
+                            }
+                        if (!wrongBelow) 
+                            continue;
+                    }
+                    var doorFrom = doorPositions[r];
+                    var doorTo = doorPositions[targetRoom];
+                    var steps = pos + 1 + Math.Abs(doorFrom - doorTo) + 1;
+                    result += steps * Chars.Cost[c];
+                }
+            }
+            return result;
+        }
+        
+        public IEnumerable<(State state, int cost)> GetNext(State s)
+        {
+            for (var r = 0; r < 4; r++)
+            {
+                var first = FirstInRoom(s, r);
+                if (first.index == -1) continue;
+                for (var i = 0; i < 11; i++)
+                {
+                    if (Chars.IsDoor[i]) 
+                        continue; 
+                    if (s.Hall[i] != '.') 
+                        continue;
+                    if (!CanMoveInHall(s.Hall, r, i)) 
+                        continue;
+                    var newState = s.WithHallRoomSwap(r, first.index, i);
+                    var stepsInRoom = first.index + 1;
+                    var stepsInHall = Math.Abs(i - doorPositions[r]);
+                    var cost = Chars.Cost[first.c] * (stepsInRoom + stepsInHall);
+                    yield return (newState, cost);
+                }
+            }
+            
+            for (int i = 0; i < 11; i++)
+            {
+                var c = s.Hall[i];
+                if (!Chars.IsLetter(c)) 
+                    continue;
+                var r = Chars.RoomIndex[c];
+                var posInRoom = IndexWhereCanMoveIntoRoom(s, r, c);
+                if (posInRoom == -1) 
+                    continue;
+                if (!CanPathClear(s.Hall, i, doorPositions[r])) 
+                    continue;
+                var newState = s.WithHallRoomSwap(r, posInRoom, i);
+                var stepsInHall = Math.Abs(doorPositions[r] - i);
+                var stepsInRoom = posInRoom + 1;
+                var cost = Chars.Cost[c] * (stepsInHall + stepsInRoom);
+                yield return (newState, cost);
+            }
+            
+            for (var i = 0; i < 11; i++)
+            {
+                var c = s.Hall[i];
+                if (!Chars.IsLetter(c)) 
+                    continue;
+                for (var j = 0; j < 11; j++)
+                {
+                    if (i == j) 
+                        continue;
+                    if (Chars.IsDoor[j]) 
+                        continue;
+                    if (s.Hall[j] != '.') 
+                        continue;
+                    if (!CanPathClear(s.Hall, i, j)) 
+                        continue;
+                    var newState = s.WithHallSwap(i, j);
+                    var steps = Math.Abs(i - j);
+                    var cost = Chars.Cost[c] * steps;
+                    yield return (newState, cost);
                 }
             }
         }
-        throw new Exception();
-    }
 
-    public int GetHeuristic(Maze current)
-    {
-        var total = 0;
-
-        // Проверяем буквы в коридоре
-        for (var i = 0; i < current.Hallway.HallString.Length; i++)
+        private (int index, char c) FirstInRoom(State s, int room)
         {
-            var c = current.Hallway.HallString[i];
-            if (!char.IsLetter(c)) continue;
-
-            var targetDoor = c.GetIndexRoom() * 2 + 2;
-            var steps = Math.Abs(targetDoor - i) + 1;
-            total += steps * c.GetCost();
+            var arr = s.Rooms[room];
+            for (int i = 0; i < arr.Length; i++) 
+                if (arr[i] != '.') 
+                    return (i, arr[i]);
+            return (-1, 'ы');
         }
 
-        // Проверяем буквы в комнатах
-        for (var i = 0; i < current.Rooms.Length; i++)
+        private bool CanMoveInHall(char[] hall, int roomIndex, int targetHallIndex)
         {
-            var room = current.Rooms[i];
-            for (var j = 0; j < room.RoomString.Length; j++)
-            {
-                var c = room.RoomString[j];
-                if (!char.IsLetter(c)) continue;
+            var door = doorPositions[roomIndex];
+            return CanPathClear(hall, door, targetHallIndex);
+        }
 
-                var targetRoom = c.GetIndexRoom();
-                if (targetRoom == i)
+        private bool CanPathClear(char[] hall, int from, int to)
+        {
+            var s = Math.Min(from, to);
+            var e = Math.Max(from, to);
+            for (var i = s + 1; i < e; i++) 
+                if (hall[i] != '.') 
+                    return false;
+            return true;
+        }
+
+        private int IndexWhereCanMoveIntoRoom(State s, int indexRoom, char mustBe)
+        {
+            var room = s.Rooms[indexRoom];
+            var haveSpace = false;
+            for (int i = 0; i < room.Length; i++)
+            {
+                var ch = room[i];
+                if (ch == '.')
                 {
-                    bool belowWrong = room.RoomString.Skip(j + 1).Any(x => x != c);
-                    if (!belowWrong) continue;
+                    haveSpace = true; 
+                    continue;
                 }
-
-                var doorFrom = room.IndexDoor;
-                var doorTo = current.Rooms[targetRoom].IndexDoor;
-                var steps = j + 1 + Math.Abs(doorFrom - doorTo) + 1;
-                total += steps * c.GetCost();
+                for (var k = i; k < room.Length; k++) 
+                    if (room[k] != mustBe) 
+                        return -1;
+                if (haveSpace) 
+                    return i - 1;
+                return -1;
             }
+            if (haveSpace) 
+                return room.Length - 1;
+            return -1;
         }
 
-        return total;
-    }
-
-    public IEnumerable<(Maze maze, int cost)> GetNextSteps(Maze maze)
-    {
-        var results = new List<(Maze, int)>();
-
-        for (int i = 0; i < maze.Rooms.Length; i++)
-            results.AddRange(TryGetStepFromRoomToHall(maze, i));
-
-        results.AddRange(TryGetStepInHall(maze));
-
-        for (int i = 0; i < maze.Rooms.Length; i++)
-            results.AddRange(TryGetStepFromHallToRoom(maze, i));
-
-        return results;
-    }
-
-    public IEnumerable<(Maze maze, int cost)> TryGetStepFromRoomToHall(Maze maze, int indexRoom)
-    {
-        var dataAboutLetterForMove = maze.GetDataLetterWhichFirstInRoom(indexRoom);
-        if (dataAboutLetterForMove == null) yield break;
-
-        var placesForMaybeMove = maze.GetIndexesWhereCanMoveLetterInHall();
-        foreach (var targetIndex in placesForMaybeMove)
+        public int Start()
         {
-            if (maze.CanGetStepInHall(maze.Rooms[indexRoom].IndexDoor, targetIndex))
-            {
-                var newMaze = maze.GetMazeAfterStepBetweenHallwayAndRoom(indexRoom, dataAboutLetterForMove.index, targetIndex);
-                var stepsInHall = Math.Abs(targetIndex - maze.Rooms[indexRoom].IndexDoor);
-                var stepsInRoom = dataAboutLetterForMove.index + 1;
-                var cost = dataAboutLetterForMove.c.GetCost() * (stepsInRoom + stepsInHall);
-                yield return (newMaze, cost);
-            }
-        }
-    }
+            var heap = new PriorityQueue<State, int>();
+            var minCosts = new Dictionary<State, int>();
 
-    public IEnumerable<(Maze maze, int cost)> TryGetStepInHall(Maze maze)
-    {
-        var dataAboutLetterForMove = maze.GetDataLettersWhichCanMoveInHall();
-        foreach (var start in dataAboutLetterForMove)
-        {
-            var placesForMaybeMove = maze.GetIndexesWhereCanMoveLetterInHall();
-            foreach (var targetIndex in placesForMaybeMove)
+            minCosts[start] = 0;
+            heap.Enqueue(start, Heuristic(start));
+
+            while (heap.TryDequeue(out var curr, out var priority))
             {
-                if (maze.CanGetStepInHall(start.index, targetIndex))
+                if (curr.Equals(end)) 
+                    return minCosts[curr];
+                var currCost = minCosts[curr];
+                foreach (var (next, moveCost) in GetNext(curr))
                 {
-                    var newMaze = maze.GetMazeAfterStepInHallway(start.index, targetIndex);
-                    var stepsInHall = Math.Abs(targetIndex - start.index);
-                    var cost = start.c.GetCost() * stepsInHall;
-                    yield return (newMaze, cost);
+                    var allCost = currCost + moveCost;
+                    if (!minCosts.TryGetValue(next, out var oldCost) || allCost < oldCost)
+                    {
+                        minCosts[next] = allCost;
+                        var f = allCost + Heuristic(next);
+                        heap.Enqueue(next, f);
+                    }
                 }
             }
+            throw new Exception("ыыыы");
         }
     }
-
-    public IEnumerable<(Maze maze, int cost)> TryGetStepFromHallToRoom(Maze maze, int indexRoom)
-    {
-        var dataAboutLetterForMove = maze.GetDataLettersWhichCanMoveInHall();
-        foreach (var start in dataAboutLetterForMove)
-        {
-            var placesForMaybeMove = maze.GetIndexWhereCanMoveLetterInRoom(indexRoom, start.c);
-            if (!placesForMaybeMove.HasValue) continue;
-
-            if (maze.CanGetStepInHall(maze.Rooms[indexRoom].IndexDoor, start.index))
-            {
-                var newMaze = maze.GetMazeAfterStepBetweenHallwayAndRoom(indexRoom, placesForMaybeMove.Value, start.index);
-                var stepsInHall = Math.Abs(maze.Rooms[indexRoom].IndexDoor - start.index);
-                var stepsInRoom = placesForMaybeMove.Value + 1;
-                var cost = start.c.GetCost() * (stepsInRoom + stepsInHall);
-                yield return (newMaze, cost);
-            }
-        }
-    }
-}
 
 class Run  
 {
     static int Solve(List<string> lines)
     {
-        Room.RoomSize = Parser.GetRoomSize(lines);
-        var startMaze = new Maze(lines);
-        var algorithm = new Algorithm(startMaze);
-        var result = algorithm.Start();
-        return result;
+        var roomSize = lines.Count - 3;
+        var hall = Parser.ParseHall(lines[1]);
+        var rooms = Parser.ParseRooms(lines);
+        var state = new State(hall, rooms);
+        var alg = new Algorithm(state, roomSize);
+        return alg.Start();
     }
 
     static void Main()
