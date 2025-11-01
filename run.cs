@@ -1,5 +1,4 @@
-﻿using System;
-using System.Collections.Generic;
+﻿namespace Tochka;
 
 public static class Chars
     {
@@ -328,7 +327,7 @@ public static class Chars
         }
     }
 
-class Program  
+class Run  
 {
     static int Solve(List<string> lines)
     {
