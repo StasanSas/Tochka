@@ -231,7 +231,7 @@ public static class Chars
                 yield return (newState, cost);
             }
             
-            for (var i = 0; i < 11; i++)
+            /*for (var i = 0; i < 11; i++)
             {
                 var c = s.Hall[i];
                 if (!Chars.IsLetter(c)) 
@@ -251,7 +251,7 @@ public static class Chars
                     var cost = Chars.Cost[c] * steps;
                     yield return (newState, cost);
                 }
-            }
+            }*/
         }
 
         private (int index, char c) FirstInRoom(State s, int room)
@@ -331,7 +331,7 @@ public static class Chars
         }
     }
 
-class Run  
+class run  
 {
     static int Solve(List<string> lines)
     {
